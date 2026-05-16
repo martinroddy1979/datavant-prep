@@ -1,0 +1,36 @@
+name: Testing and Quality Control
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  quality-assurance:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out source code
+      uses: actions/checkout@v4
+
+    - name: Install uv (Fast Package Manager)
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+        version: "latest"
+
+    - name: Set up Python 3.12
+      run: uv python install 3.12
+
+    - name: Install dependencies
+      run: uv sync
+
+    - name: Run Ruff Linter (Code Style Check)
+      run: uv run ruff check .
+
+    - name: Run Pytest (Unit Tests)
+      env:
+        # We pass a dummy salt to the test server so the tests don't crash
+        SHARED_SECRET_SALT: "ci-testing-secret-key-2026"
+      run: uv run pytest
