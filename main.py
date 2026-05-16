@@ -18,8 +18,11 @@ class PatientRecord(BaseModel):
 
 @mock_aws
 def run_pipeline():
-    """Simulates a secure ingestion run processing data into AWS infrastructure."""
-    log.info("system_boot", message="Initializing Secure Ingestion Vessel with AWS S3 Engine")
+    """Simulates a secure ingestion run processing data into AWS."""
+    log.info(
+        "system_boot", 
+        message="Initializing Secure Ingestion Vessel with AWS S3 Engine"
+    )
     
     # 1. Setup our mocked cloud infrastructure locally
     s3_resource = boto3.resource("s3", region_name="eu-west-1")
@@ -50,33 +53,23 @@ def run_pipeline():
         # 4. Hand off the cargo to the storage engine
         storage.upload_patient_record(packet_id=record.patient_id, data=payload)
 
-  # 5. THE INFRASTRUCTURE INSPECTOR & VISUALISER
-        log.info("aws_s3_inventory_scan", message="Scanning virtual S3 bucket contents")
+        # 5. THE INFRASTRUCTURE INSPECTOR: Verify the cloud destination state
+        log.info("aws_s3_verification_start", target_bucket=BUCKET_NAME)
         
         s3_client = boto3.client("s3", region_name="eu-west-1")
+        response = s3_client.get_object(
+            Bucket=BUCKET_NAME,
+            Key=f"ingested/{record.patient_id}.json"
+        )
         
-        # List all objects inside our mocked bucket
-        bucket_objects = s3_client.list_objects_v2(Bucket=BUCKET_NAME)
-        
-        for obj in bucket_objects.get('Contents', []):
-            file_key = obj['Key']
-            print(f"\n📁 [VIRTUAL S3 BUCKET] Found File: s3://{BUCKET_NAME}/{file_key}")
-            
-            # Fetch the actual file content
-            file_response = s3_client.get_object(Bucket=BUCKET_NAME, Key=file_key)
-            raw_body = file_response['Body'].read().decode('utf-8')
-            
-            # Pretty-print the JSON payload sitting in the cloud
-            parsed_json = json.loads(raw_body)
-            print("📄 [FILE CONTENT ON AWS]:")
-            print(json.dumps(parsed_json, indent=4))
-            print("-" * 50)
-
-    except ValidationError:
-        
-        # Pull the streaming bytes back out of the virtual bucket and parse the JSON
+        # Pull streaming bytes back out of the virtual bucket & parse JSON
         uploaded_content = json.loads(response['Body'].read().decode('utf-8'))
         
+        # Explicit print statement to see the full raw un-sliced hash data
+        print("\n🔍 [RAW DE-IDENTIFIED CLOUD DATA] Inspecting full S3 Object:")
+        print(f"🔒 Full SHA-256 Patient Token: {uploaded_content['token']}")
+        print(f"📋 Full Payload JSON:\n{json.dumps(uploaded_content, indent=2)}\n")
+
         log.info(
             "aws_s3_verification_success",
             verified_patient_id=uploaded_content["patient_id"],
