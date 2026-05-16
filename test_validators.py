@@ -1,4 +1,5 @@
 import hashlib
+import os
 
 import pytest
 from pydantic import BaseModel
@@ -73,7 +74,14 @@ def test_uppercase_string_validates_uppercase():
 
 def test_generate_secure_token_is_consistent():
     source = "TestValue"
-    expected = hashlib.sha256((source.strip().lower() + "donegal-fortress-2026").encode()).hexdigest()
+    
+    # Dynamically get whatever salt the system is currently using
+    current_salt = os.environ.get("SHARED_SECRET_SALT", "donegal-fortress-2026")
+    
+    # Calculate the expected hash using the dynamic salt
+    combined = f"{source.strip().lower()}{current_salt}"
+    expected = hashlib.sha256(combined.encode()).hexdigest()
+    
     assert generate_secure_token(source) == expected
 
 def test_token_determinism():
