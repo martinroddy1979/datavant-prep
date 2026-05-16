@@ -1,7 +1,8 @@
 # logger.py
 import logging
-import sys
+
 import structlog
+
 
 def configure_logger():
     """Configures the application to emit structured JSON logs for AWS CloudWatch."""
@@ -21,5 +22,5 @@ def configure_logger():
     )
     return structlog.get_logger()
 
-# Initialize a globally accessible logger instance
+# Initialize a globally accessible logger instance for use throughout app
 log = configure_logger()
