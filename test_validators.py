@@ -1,9 +1,12 @@
 import hashlib
 import os
 
+import boto3
 import pytest
+from moto import mock_aws
 from pydantic import BaseModel
 
+from storage import CloudStorageEngine
 from validators import (
     PacketId,
     ProviderName,
@@ -96,3 +99,36 @@ def test_token_determinism():
 def test_token_consistency():
     # Ensure 'martin' and 'MARTIN' result in same token (Sanitization)
     assert generate_secure_token("martin") == generate_secure_token("MARTIN")
+
+@mock_aws
+def test_cloud_storage_engine_uploads_successfully():
+    """Verifies that CloudStorageEngine correctly pushes payloads to an AWS S3 bucket."""
+    test_bucket = "datavant-test-bucket-ci"
+    test_packet_id = "P-TEST-999"
+    test_payload = {
+        "patient_id": test_packet_id,
+        "token": "mocked_64_char_hash_abc123",
+        "diagnosis": "U07.1"
+    }
+
+    # 1. Setup the isolated virtual infrastructure for this specific test
+    s3_resource = boto3.resource("s3", region_name="eu-west-1")
+    s3_resource.create_bucket(
+        Bucket=test_bucket,
+        CreateBucketConfiguration={'LocationConstraint': 'eu-west-1'}
+    )
+
+    # 2. Instantiate our actual production module code
+    storage_engine = CloudStorageEngine(bucket_name=test_bucket)
+
+    # 3. Execute the function we are testing
+    result = storage_engine.upload_patient_record(packet_id=test_packet_id, data=test_payload)
+
+    # 4. Assertions: Confirm the function returned True and the data exists in S3
+    assert result is True
+
+    # Pull the object directly from the virtual S3 layer to confirm contents match
+    s3_client = boto3.client("s3", region_name="eu-west-1")
+    response = s3_client.get_object(Bucket=test_bucket, Key=f"ingested/{test_packet_id}.json")
+    
+    assert response['ResponseMetadata']['HTTPStatusCode'] == 200
