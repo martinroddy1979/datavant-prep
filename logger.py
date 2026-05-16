@@ -21,5 +21,5 @@ def configure_logger():
     )
     return structlog.get_logger()
 
-# Initialize a globally accessible logger instance
+# Initialize a globally accessible logger instance for use throughout app
 log = configure_logger()
