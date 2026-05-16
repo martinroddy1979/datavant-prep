@@ -1,14 +1,8 @@
-from datetime import datetime
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel
 
 from validators import (
-    PacketId,
-    ProviderName,
-    RecordsCount,
-    SanitizedString,
-    UppercaseString,
     generate_secure_token,
 )
 
@@ -30,7 +24,7 @@ record = PatientRecord(
     diagnosis_code="Z00.0"
 )
 
-print(f"Original Name: 'Martin'")
+print("Original Name: 'Martin'")
 print(f"Stored Token:  {record.patient_name_token}")
 
 # class PatientRecord(BaseModel):
