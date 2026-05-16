@@ -7,18 +7,32 @@ on:
     branches: [ main, master ]
 
 jobs:
-  quality-assurance:
+  # JOB 1: Focuses strictly on code style and formatting
+  linting:
     runs-on: ubuntu-latest
-
     steps:
     - name: Check out source code
       uses: actions/checkout@v4
 
-    - name: Install uv (Fast Package Manager)
+    - name: Install uv
       uses: astral-sh/setup-uv@v5
       with:
         enable-cache: true
-        version: "latest"
+
+    - name: Run Ruff Linter
+      run: uv run ruff check .
+
+  # JOB 2: Focuses strictly on executing the validation and privacy engine tests
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out source code
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
 
     - name: Set up Python 3.12
       run: uv python install 3.12
@@ -26,11 +40,7 @@ jobs:
     - name: Install dependencies
       run: uv sync
 
-    - name: Run Ruff Linter (Code Style Check)
-      run: uv run ruff check .
-
-    - name: Run Pytest (Unit Tests)
+    - name: Run Pytest Suite
       env:
-        # We pass a dummy salt to the test server so the tests don't crash
         SHARED_SECRET_SALT: "ci-testing-secret-key-2026"
       run: uv run pytest
