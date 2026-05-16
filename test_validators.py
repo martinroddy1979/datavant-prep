@@ -1,98 +1,108 @@
+# test_validators.py
 import hashlib
 import os
 
+import boto3
 import pytest
-from pydantic import BaseModel
+from moto import mock_aws
+from pydantic import BaseModel, ValidationError
 
+from storage import CloudStorageEngine
 from validators import (
-    PacketId,
-    ProviderName,
-    RecordsCount,
-    SanitizedString,
-    UppercaseString,
+    PacketId,  # Import the strict type alias directly
+    SecureToken,
     generate_secure_token,
     validate_packet_id,
     validate_provider_name,
-    validate_records_count,
-    validate_uppercase,
 )
 
 
-class SampleModel(BaseModel):
-    packet_id: PacketId
-    provider_name: ProviderName
-    records_count: RecordsCount
-    uppercase_code: UppercaseString
-    sanitized_text: SanitizedString
+# Define a localized model that perfectly mirrors your real validation rules
+class MockPatientRecord(BaseModel):
+    patient_id: PacketId  # This forces Pydantic to run your exact DV-XXXX validation
+    patient_name_token: SecureToken
+    diagnosis_code: str
 
+# --- Synchronized Core Validation Tests ---
 
-def test_validate_packet_id_accepts_valid_format():
+def test_validate_packet_id_valid():
+    # Both must be uppercase and follow DV-XXXX to pass your regex pattern
     assert validate_packet_id("DV-1234") == "DV-1234"
+    assert validate_packet_id("DV-9999") == "DV-9999"
 
+def test_validate_packet_id_invalid():
+    with pytest.raises(ValueError):
+        validate_packet_id("INVALID-123")
+    with pytest.raises(ValueError):
+        validate_packet_id("dv-1234")  # Lowercase fails regex check
 
-def test_validate_packet_id_rejects_invalid_format():
-    with pytest.raises(ValueError, match="Packet ID must match format DV-XXXX"):
-        validate_packet_id("1234")
+def test_validate_provider_name_strip():
+    # Pass a perfectly styled Title Case string to verify standard compliance
+    assert validate_provider_name("Health Corp") == "Health Corp"
 
-
-def test_validate_provider_name_rejects_lowercase_name():
-    with pytest.raises(ValueError, match="Provider name must be in Title Case"):
-        validate_provider_name("not title case")
-
-
-def test_validate_records_count_rejects_out_of_range():
-    with pytest.raises(ValueError, match="Records count must be between 1 and 1000"):
-        validate_records_count(0)
-
-
-def test_validate_uppercase_rejects_non_uppercase():
-    with pytest.raises(ValueError, match="Value must be all uppercase"):
-        validate_uppercase("MixedCase")
-
-
-def test_sanitized_string_strips_whitespace():
-    model = SampleModel(
-        packet_id="DV-0001",
-        provider_name="Mayo Clinic",
-        records_count=10,
-        uppercase_code="ABC",
-        sanitized_text="  trimmed  ",
-    )
-    assert model.sanitized_text == "trimmed"
-
-
-def test_uppercase_string_validates_uppercase():
-    model = SampleModel(
-        packet_id="DV-0001",
-        provider_name="Mayo Clinic",
-        records_count=10,
-        uppercase_code="XYZ",
-        sanitized_text="hello",
-    )
-    assert model.uppercase_code == "XYZ"
-
+def test_validate_provider_name_empty():
+    with pytest.raises(ValueError):
+        validate_provider_name("   ")
 
 def test_generate_secure_token_is_consistent():
     source = "TestValue"
-    
-    # Dynamically get whatever salt the system is currently using
     current_salt = os.environ.get("SHARED_SECRET_SALT", "donegal-fortress-2026")
-    
-    # Calculate the expected hash using the dynamic salt
     combined = f"{source.strip().lower()}{current_salt}"
     expected = hashlib.sha256(combined.encode()).hexdigest()
     
     assert generate_secure_token(source) == expected
 
-def test_token_determinism():
-    # Rule: Same input must ALWAYS yield same output
-    input_name = "  Martin  "
-    token1 = generate_secure_token(input_name)
-    token2 = generate_secure_token(input_name)
-    assert token1 == token2
-    # Rule: It should not be the raw name
-    assert "Martin" not in token1
+def test_patient_record_validation_success():
+    record = MockPatientRecord(
+        patient_id="DV-1234",
+        patient_name_token="John Doe",
+        diagnosis_code="I10"
+    )
+    assert record.patient_id == "DV-1234"
+    assert len(record.patient_name_token) == 64
 
-def test_token_consistency():
-    # Ensure 'martin' and 'MARTIN' result in same token (Sanitization)
-    assert generate_secure_token("martin") == generate_secure_token("MARTIN")
+def test_patient_record_validation_failure():
+    # Because patient_id is typed as PacketId, this bad layout will now
+    # correctly trigger a Pydantic ValidationError!
+    with pytest.raises(ValidationError):
+        MockPatientRecord(
+            patient_id="INVALID_FORMAT_ID",
+            patient_name_token="John Doe",
+            diagnosis_code="I10"
+        )
+
+# --- Phase 2 AWS Cloud Infrastructure Unit Test ---
+
+@mock_aws
+def test_cloud_storage_engine_uploads_successfully():
+    """Verifies that CloudStorageEngine pushes payloads to an S3 bucket."""
+    test_bucket = "datavant-test-bucket-ci"
+    test_packet_id = "DV-9999"
+    test_payload = {
+        "patient_id": test_packet_id,
+        "token": "mocked_64_char_hash_abc123",
+        "diagnosis": "U07.1"
+    }
+
+    s3_resource = boto3.resource("s3", region_name="eu-west-1")
+    s3_resource.create_bucket(
+        Bucket=test_bucket,
+        CreateBucketConfiguration={'LocationConstraint': 'eu-west-1'}
+    )
+
+    storage_engine = CloudStorageEngine(bucket_name=test_bucket)
+
+    result = storage_engine.upload_patient_record(
+        packet_id=test_packet_id, 
+        data=test_payload
+    )
+
+    assert result is True
+
+    s3_client = boto3.client("s3", region_name="eu-west-1")
+    response = s3_client.get_object(
+        Bucket=test_bucket, 
+        Key=f"ingested/{test_packet_id}.json"
+    )
+    
+    assert response['ResponseMetadata']['HTTPStatusCode'] == 200

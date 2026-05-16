@@ -9,7 +9,7 @@ def configure_logger():
     structlog.configure(
         processors=[
             # Adds a precise timestamp to every log entry
-            structlog.processors.TimeStamps(fmt="iso"),
+            structlog.processors.TimeStamper(fmt="iso"),
             # Captures the severity level (INFO, WARNING, ERROR)
             structlog.processors.add_log_level,
             # Formats the output as a clean JSON string that cloud tools can parse
